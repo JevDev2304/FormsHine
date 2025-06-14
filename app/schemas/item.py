@@ -1,13 +1,14 @@
 from pydantic import BaseModel,  ConfigDict
 from datetime import date
 from app.models.item import Items
+from typing import Optional
 
 class CreateItem(BaseModel):
     title: str
     score: int
-    description: str
-    right_asimetric_count : int 
-    left_asimetric_count: int 
+    description: Optional[str] = None
+    right_asimetric_count : Optional[int] = 0 
+    left_asimetric_count: Optional[int] = 0
     section_id: int
     model_config = ConfigDict(from_attributes=True)
 

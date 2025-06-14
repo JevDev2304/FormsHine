@@ -13,8 +13,17 @@ service = HineExamService()
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_child(exam:HineExamCreate ):
-    return service.create_exam(exam)
+async def create_hine_exam(exam:HineExamCreate ):
+    try:
+        return service.create_exam(exam)
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+@router.get("/{exam_id}")
+async def get_hine_exams(exam_id: int):
+    try:
+        return service.get_exam(exam_id)
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
 

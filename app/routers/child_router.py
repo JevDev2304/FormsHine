@@ -46,14 +46,3 @@ async def delete_child(child_id: str):
         raise HTTPException(status_code=404, detail="Child not found")
     return {"detail": "Child deleted"}
 
-@router.post("/createExam", status_code=status.HTTP_201_CREATED)
-async def create_exam(exam: CreateExam):
-    return service2.create_exam(exam)
-
-@router.post("/createSection" , status_code=status.HTTP_201_CREATED)
-async def create_section(section:CreateSection ):
-    return service3.create_section(section)
-
-@router.post("/createItem", status_code=status.HTTP_201_CREATED)
-async def create_item(item: CreateItem):
-    return service4.create_item(item)
