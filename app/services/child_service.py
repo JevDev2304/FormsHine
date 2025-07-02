@@ -31,22 +31,37 @@ class ChildService:
 
     @staticmethod
     def get_child_by_id(child_id: str) -> ChildResponse | None:
+        print(child_id)
         with Session(engine) as session:
             child = session.exec(
-                select(Child).where(Child.id == child_id, Child.eliminated == 0)
+                select(Child).where(Child.id == str(child_id), Child.eliminated == 0)
             ).first()
             return to_child_response(child) if child else None
 
     @staticmethod
-    def update_child(child_id: str, data: dict) -> ChildResponse | None:
+    def update_child(child_id: str, data) -> ChildResponse | None:
         with Session(engine) as session:
             child = session.exec(
-                select(Child).where(Child.id == child_id, Child.eliminated == 0)
+                select(Child).where(Child.id == str(child_id), Child.eliminated == 0)
             ).first()
+            print(child)
             if not child:
                 return None
-            for key, value in data.items():
-                setattr(child, key, value)
+            
+            # Convertir el modelo a diccionario usando SQLModel
+            child_dict = child.model_dump()
+            data_dict = data.model_dump()
+            print("Datos originales:", child_dict)
+            print("Datos a actualizar:", data_dict)
+            
+            # Solo actualizar los campos que están en data y han cambiado
+            for key, value in data_dict.items():
+                if key in child_dict and child_dict[key] != value:
+                    print(f"Actualizando {key}: {child_dict[key]} -> {value}")
+                    setattr(child, key, value)
+                elif key in child_dict:
+                    print(f"Manteniendo {key}: {child_dict[key]} (sin cambios)")
+            
             session.commit()
             session.refresh(child)
             return to_child_response(child)

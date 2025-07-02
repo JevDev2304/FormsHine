@@ -22,7 +22,7 @@ async def get_children(current_user: dict = Depends(get_current_user)):
     return service.get_all_children()
 
 @router.get("/{child_id}", response_model=ChildResponse)
-async def get_child_by_id(child_id: int, current_user: dict = Depends(get_current_user)):
+async def get_child_by_id(child_id: str, current_user: dict = Depends(get_current_user)):
     child = service.get_child_by_id(child_id)
     if child is None:
         raise HTTPException(status_code=404, detail="Child not found")
@@ -33,8 +33,8 @@ async def create_child(child: ChildCreate, current_user: dict = Depends(get_curr
     return service.create_child(child)
 
 @router.put("/{child_id}", response_model=ChildResponse)
-async def update_child(child_id: int, child: Child, current_user: dict = Depends(get_current_user)):
-    updated_child = service.update(child_id, child)
+async def update_child(child_id: str, child: Child, current_user: dict = Depends(get_current_user)):
+    updated_child = service.update_child(child_id, child)
     if updated_child is None:
         raise HTTPException(status_code=404, detail="Child not found")
     return updated_child
