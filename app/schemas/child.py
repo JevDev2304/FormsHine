@@ -7,10 +7,12 @@ class ChildResponse(BaseModel):
     id: str
     name: str
     last_name: str
-    gestational_age: int
-    head_circumference: float
+    gestational_age: str
+    cronological_age: str
+    corrected_age: str
+    head_circumference: str
     birth_date: date
-    document_type: str
+    exam_date: date
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -18,10 +20,12 @@ class ChildCreate(BaseModel):
     id: str
     name: str
     last_name: str
-    gestational_age: int
-    head_circumference: float
+    gestational_age: str
+    cronological_age: str
+    corrected_age: str
+    head_circumference: str
     birth_date: date
-    document_type: str = "Registro"
+    exam_date: date
 
 def to_child_response(child: Child) -> ChildResponse:
     return ChildResponse.model_validate(child)
