@@ -2,6 +2,8 @@ from sqlmodel import SQLModel, Field, Relationship
 from datetime import date
 from typing import Optional, List
 
+from app.models.exam import Exams
+
 class Children(SQLModel, table=True):
     __tablename__ = "children"
     id: str = Field(primary_key=True)

@@ -3,12 +3,13 @@ from sqlmodel import Session, text
 from fastapi import HTTPException, status
 
 # Importaciones de servicios
+from app.mappers.exam_mapper import to_exam_response
 from app.services.exam_service import ExamService
 from app.services.section_service import SectionService
 from app.services.item_service import ItemService
 
 # Importaciones de esquemas
-from app.schemas.hine_exam import HineExamCreate
+from app.schemas.hine_exam import HineExam
 from app.schemas.exam import CreateExam
 from app.schemas.section import CreateSection
 from app.schemas.item import CreateItem
@@ -73,7 +74,7 @@ class HineExamService:
                 detail=f"Error creating item '{title}': {str(e)}"
             )
 
-    def _validate_required_fields(self, hine_exam: HineExamCreate) -> None:
+    def _validate_required_fields(self, hine_exam: HineExam) -> None:
         """
         Valida los campos requeridos antes de procesar el examen.
         
@@ -94,7 +95,7 @@ class HineExamService:
                 detail="Doctor ID is required"
             )
             
-    def get_exam(self, exam_id: int) -> Dict[str, Any]:
+    def get_exam(self, exam_id: str) -> HineExam:
         with Session(engine) as session:
             try:
                 # Consulta a la vista modificada
@@ -112,44 +113,8 @@ class HineExamService:
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail=f"Examen con ID {exam_id} no encontrado"
                     )
-                
-                # Estructura de respuesta
-                exam_data = {
-                    "exam": {
-                        "id": rows[0].exam_id,
-                        "name": rows[0].exam_name,
-                        "description": rows[0].exam_description,
-                        "created_at": rows[0].exam_created_at.isoformat(),
-                        "child_id": rows[0].child_id,
-                        "doctor": {
-                            "id": rows[0].doctor_id,
-                            "name": rows[0].doctor_name
-                        }
-                    },
-                    "sections": []
-                }
-                
-                # Organizar secciones e ítems
-                current_section = None
-                for row in rows:
-                    if not current_section or current_section["id"] != row.section_id:
-                        current_section = {
-                            "id": row.section_id,
-                            "name": row.section_name,
-                            "items": []
-                        }
-                        exam_data["sections"].append(current_section)
-                    
-                    current_section["items"].append({
-                        "id": row.item_id,
-                        "title": row.item_title,
-                        "score": row.item_score,
-                        "description": row.item_description,
-                        "right_asimetric_count": row.right_asimetric_count,
-                        "left_asimetric_count": row.left_asimetric_count
-                    })
-                
-                return exam_data
+
+                return to_exam_response(rows)
                 
             except Exception as e:
                 raise HTTPException(
@@ -157,8 +122,11 @@ class HineExamService:
                     detail=f"Error al obtener detalles del examen: {str(e)}"
                 )
         
+    def get_exams_by_children(self, children_id: str) -> Dict[str, Any]:
+        pass
 
-    def create_exam(self, hine_exam: HineExamCreate) -> Dict[str, Any]:
+
+    def create_exam(self, hine_exam: HineExam) -> Dict[str, Any]:
         """
         Crea un examen HINE completo con todas sus secciones e ítems.
         
@@ -223,6 +191,8 @@ class HineExamService:
             if session:
                 session.close()
 
+    
+
     def _create_section(self, exam_id: int, section_name: str) -> Any:
         """
         Método helper para crear una sección con manejo de errores.
@@ -249,7 +219,7 @@ class HineExamService:
                 detail=f"Error creating section '{section_name}': {str(e)}"
             )
 
-    def _create_all_items(self, sections: Dict[str, Any], hine_exam: HineExamCreate) -> None:
+    def _create_all_items(self, sections: Dict[str, Any], hine_exam: HineExam) -> None:
         """
         Crea todos los ítems para todas las secciones del examen.
         
@@ -282,7 +252,7 @@ class HineExamService:
         self._create_behavior_items(sections["behavior"].id, hine_exam)
 
     # Métodos específicos para crear ítems de cada sección (se mantienen igual)
-    def _create_cranial_nerves_items(self, section_id: int, hine_exam: HineExamCreate) -> None:
+    def _create_cranial_nerves_items(self, section_id: int, hine_exam: HineExam) -> None:
         items = [
             # Apariencia facial
             ("apariencia facial", 
@@ -336,7 +306,7 @@ class HineExamService:
                     detail=f"Error al crear ítem '{title}': {str(e)}"
                 )
 
-    def _create_posture_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_posture_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for posture section."""
         items = [
             ("cabeza", hineExam.posture_head_score, hineExam.posture_head_description,
@@ -356,7 +326,7 @@ class HineExamService:
         for title, score, description, r_count, l_count in items:
             self._create_item(section_id, title, score, description, r_count, l_count)
 
-    def _create_movement_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_movement_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for movement section."""
         items = [
             ("cantidad", hineExam.movement_amount_score, hineExam.movement_amount_description,
@@ -368,7 +338,7 @@ class HineExamService:
         for title, score, description, r_count, l_count in items:
             self._create_item(section_id, title, score, description, r_count, l_count)
 
-    def _create_tone_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_tone_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for tone section."""
         items = [
             ("signo de la bufanda", hineExam.tone_scarf_sign_score, hineExam.tone_scarf_sign_description,
@@ -406,7 +376,7 @@ class HineExamService:
         for title, score, description, r_count, l_count in items:
             self._create_item(section_id, title, score, description, r_count, l_count)
 
-    def _create_reflexes_reactions_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_reflexes_reactions_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for reflexes and reactions section."""
         items = [
             ("proteccion del brazo", hineExam.reflexes_reactions_arm_protecting_score,
@@ -434,7 +404,7 @@ class HineExamService:
         for title, score, description, r_count, l_count in items:
             self._create_item(section_id, title, score, description, r_count, l_count)
 
-    def _create_motor_milestones_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_motor_milestones_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for motor milestones section."""
         items = [
             ("control cefalico", hineExam.motor_milestones_head_control_age_achieved,
@@ -481,7 +451,7 @@ class HineExamService:
         for title, score, description, r_count, l_count in items:
             self._create_item(section_id, title, score, description, r_count, l_count)
 
-    def _create_behavior_items(self, section_id: int, hineExam: HineExamCreate) -> None:
+    def _create_behavior_items(self, section_id: int, hineExam: HineExam) -> None:
         """Create items for behavior section."""
         items = [
             ("estado de consciencia", hineExam.behavior_state_of_consciousness_score,

@@ -3,8 +3,14 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 
-class HineExamCreate(BaseModel):
-    cranial_nerves_simple_appearance_score: int = 0
+class HineExam(BaseModel):
+
+    children_id: str 
+    doctor_id: str
+    exam_date: str
+    general_description: str = ""
+
+    cranial_nerves_simple_appearance_score: int 
     cranial_nerves_simple_appearance_description: Optional[str] = None
     cranial_nerves_simple_appearance_r_asimetric_count: int = 0
     cranial_nerves_simple_appearance_l_asimetric_count: int = 0
@@ -192,9 +198,7 @@ class HineExamCreate(BaseModel):
     behavior_social_interaction_score: int = 0
     behavior_social_interaction_description: Optional[str] = None
 
-    children_id: str = "11111111"
-    doctor_id: str = "doc-001"
-    general_description: str = ""
+
 
 
     model_config = ConfigDict(from_attributes=True)

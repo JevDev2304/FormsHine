@@ -2,6 +2,8 @@ from sqlmodel import SQLModel, Field, Relationship
 from datetime import date
 from typing import Optional, TYPE_CHECKING
 
+from app.models.section import Sections
+
 
 
 class Items(SQLModel, table=True):

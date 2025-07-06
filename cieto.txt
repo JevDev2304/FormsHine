@@ -1,0 +1,79 @@
+class HineExam 
+  final String examId;
+  final String patientId;
+  final String userId;
+  final String examDate;
+  final AnalysisData analysis;
+  final MotorMilestoneData motorMilestones;
+  final BehaviorData behavior;
+
+{
+  examId: 'exam-123',
+  patientId: 'patient-456',
+  userId: 'user-789',
+  examDate: '2024-20-02',
+  analysis: AnalysisData{ 
+    modules: [
+      ModuleResponse{
+        moduleId: 'cranialNerves',
+        obtainedScore: 10,
+        responses: [
+          QuestionResponse{
+            questionId: 'facialAppearance',
+            selectedValue: 2,
+            leftAsymmetry: false,
+            rightAsymmetry: false,
+            comment: 'el niño...',
+          },
+          QuestionResponse{
+            questionId: 'amount',
+            selectedValue: 3,
+            leftAsymmetry: true,
+            rightAsymmetry: false,
+            comment: 'el niño...',
+          },
+          QuestionResponse{
+            questionId: 'quality',
+            selectedValue: 0,
+            leftAsymmetry: false,
+            rightAsymmetry: true,
+            comment: 'el niño...',
+          },
+        ],
+      },
+    ],
+    totalScore: 12,
+    maxPossibleScore: 20,
+    totalRightAsymmetries: 5,
+    totalLeftAsymmetries: 7,
+  },
+
+  motorMilestones: MotorMilestoneData{
+    responses: [
+      QuestionResponse{
+        questionId: 'CephalicControl',
+        selectedValue: 2,
+        leftAsymmetry: true,
+        rightAsymmetry: false,
+        comment: 'el niño...',
+      },
+      QuestionResponse{
+        questionId: 'CranialNerves',
+        selectedValue: 3,
+        leftAsymmetry: false,
+        rightAsymmetry: true,
+        comment: 'el niño...',
+      },
+    ],
+  },
+
+  behavior: BehaviorData{
+    responses: [
+      BehaviorResponse{
+        questionId: 'StateOfConsciousness',
+        selectedValue: 6,
+        comment: 'el niño...',
+      },
+    ],
+  },
+}

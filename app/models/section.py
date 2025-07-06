@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional,List
+from app.models.exam import Exams
 from app.models.item import Items
 
 class Sections(SQLModel, table=True):
