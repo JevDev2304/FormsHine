@@ -97,7 +97,7 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
         patientId=first.child_id,
         userId=first.doctor_id,
         doctorName=first.doctor_name,
-        examDate = first.exam_created_at.strftime("%Y-%m-%d")
+        examDate = first.exam_created_at.strftime("%Y-%m-%d"),
         description=first.exam_description,
         analysis=AnalysisData(
             modules=analysis_modules,
