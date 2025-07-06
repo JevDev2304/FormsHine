@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel,  ConfigDict
 from datetime import date
 from typing import Optional
@@ -5,13 +6,13 @@ from app.models.section import Sections
 
 class CreateSection(BaseModel):
     section_name: str
-    id_exam: int
+    id_exam: Optional[UUID]
     model_config = ConfigDict(from_attributes=True)
 
 class SectionResponse(BaseModel):
-    id: int 
+    id: UUID 
     section_name: str
-    id_exam: int
+    id_exam: Optional[UUID]
     model_config = ConfigDict(from_attributes=True)
 
 

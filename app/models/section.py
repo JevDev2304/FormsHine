@@ -1,3 +1,4 @@
+from uuid import uuid4
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional,List
 from app.models.exam import Exams
@@ -5,7 +6,7 @@ from app.models.item import Items
 
 class Sections(SQLModel, table=True):
     __tablename__ = "sections"
-    id: int = Field(default=None, primary_key=True)
+    id: int = Field(default_factory=uuid4, primary_key=True)
     section_name: str
     
     # Foreign key

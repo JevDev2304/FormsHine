@@ -1,13 +1,11 @@
+from uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import date
 from typing import Optional, List
-from app.models.child import Children
-from app.models.doctor import Doctors
-from app.models.section import Sections
 class Exams(SQLModel, table=True):
     __tablename__ = "exams"
 
-    id: str = Field(default= None,primary_key=True)
+    id: UUID = Field(default_factory=uuid4,primary_key=True)
     name: str #TODO: NO VA
     created_at: date = Field(default_factory=date.today)
     eliminated: Optional[bool] = Field(default=False)

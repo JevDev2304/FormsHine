@@ -1,34 +1,54 @@
-# schemas/child.py
-from pydantic import BaseModel,  ConfigDict
-from datetime import date
-from typing import Optional
-from app.models.exam import Exams
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional
 
-class CreateExam(BaseModel):
-    name: str
-    eliminated: Optional[bool]
-    description: str 
-    child_id: str 
-    doctor_id: str
+class QuestionResponse(BaseModel):
+    questionId: str
+    selectedValue: int
+    leftAsymmetry: bool
+    rightAsymmetry: bool
+    comment: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class BehaviorResponse(BaseModel):
+    questionId: str
+    selectedValue: int
+    comment: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class ModuleResponse(BaseModel):
+    moduleId: str
+    obtainedScore: int
+    responses: List[QuestionResponse]
+    model_config = ConfigDict(from_attributes=True)
+
+class AnalysisData(BaseModel):
+    modules: List[ModuleResponse]
+    totalScore: int
+    maxPossibleScore: int
+    totalRightAsymmetries: int
+    totalLeftAsymmetries: int
+    model_config = ConfigDict(from_attributes=True)
+
+class MotorMilestoneData(BaseModel):
+    responses: List[QuestionResponse]
     model_config = ConfigDict(from_attributes=True)
 
 
-class ExamResponse(BaseModel):
-    id: int
-    name: str
-    created_at: date 
-    eliminated: bool
-    description: str 
-
-    # Foreign keys
-    child_id: str 
-    doctor_id: str
-
+class BehaviorData(BaseModel):
+    responses: List[BehaviorResponse]
     model_config = ConfigDict(from_attributes=True)
-    
 
-def to_exam_model(exam_create: CreateExam) -> Exams:
-    return Exams(**exam_create.model_dump()) 
 
-def to_exam_response(exam: Exams) -> ExamResponse:
-    return ExamResponse.model_validate(exam)
+class HineExam(BaseModel):
+    examId: Optional[UUID]=None
+    patientId: str
+    userId: str
+    doctorName: Optional[str] = None
+    examDate: str
+    description: str = ""
+    analysis: AnalysisData
+    motorMilestones: MotorMilestoneData
+    behavior: BehaviorData
+    model_config = ConfigDict(from_attributes=True)
+

@@ -1,7 +1,7 @@
-from typing import Any
+from typing import Any, List
 from collections import defaultdict
 from app.models.exam import Exams
-from app.schemas.exam.exam import (
+from app.schemas.exam import (
     HineExam,AnalysisData, BehaviorData, MotorMilestoneData,
     ModuleResponse, QuestionResponse, BehaviorResponse
 )
@@ -20,12 +20,12 @@ def to_exam_model(hine_exam: HineExam) -> Exams:
         description=hine_exam.description,
         child_id=hine_exam.patientId,
         doctor_id=hine_exam.userId,
-        created_at=hine_exam.c
+        created_at=hine_exam.examDate
         # created_at se genera automáticamente si no se especifica
     )
 
 
-def to_exam_response(rows: list[Any]) -> HineExam:
+def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
     if not rows:
         raise ValueError("No data found for exam")
 
@@ -58,13 +58,14 @@ def to_exam_response(rows: list[Any]) -> HineExam:
                     questionId=row.item_title,
                     selectedValue=row.item_score,
                     comment=row.item_description,
-                    leftAsymmetry=bool(row.left_asymmetry),
-                    rightAsymmetry=bool(row.right_asymmetry),
+                    leftAsymmetry=bool(row.left_asimetric_count),
+                    rightAsymmetry=bool(row.right_asimetric_count),
                 ))
+                #TODO: esto me lo manda cristian literal, lo estoy calculando pa nada
                 module_score += row.item_score or 0
-                max_score += 5
-                total_left += row.left_asymmetry or 0
-                total_right += row.right_asymmetry or 0
+                max_score += 3
+                total_left += row.left_asimetric_count or 0
+                total_right += row.right_asimetric_count or 0
 
             analysis_modules.append(ModuleResponse(
                 moduleId=module_id,
@@ -79,8 +80,8 @@ def to_exam_response(rows: list[Any]) -> HineExam:
             questionId=row.item_title,
             selectedValue=row.item_score,
             comment=row.item_description,
-            leftAsymmetry=bool(row.left_asymmetry),
-            rightAsymmetry=bool(row.right_asymmetry),
+            leftAsymmetry=bool(row.left_asimetric_count),
+            rightAsymmetry=bool(row.right_asimetric_count),
         ))
 
     # Procesar behavior
@@ -95,8 +96,9 @@ def to_exam_response(rows: list[Any]) -> HineExam:
         examId=first.exam_id,
         patientId=first.child_id,
         userId=first.doctor_id,
-        examDate=first.created_at.isoformat(),
-        description=first.description,
+        doctorName=first.doctor_name,
+        examDate=first.exam_created_at.isoformat(),
+        description=first.exam_description,
         analysis=AnalysisData(
             modules=analysis_modules,
             totalScore=analysis_score,
@@ -107,3 +109,21 @@ def to_exam_response(rows: list[Any]) -> HineExam:
         motorMilestones=MotorMilestoneData(responses=motor_responses),
         behavior=BehaviorData(responses=behavior_responses),
     )
+
+
+def build_exams_from_rows(rows: list[Any]) -> List[HineExam]:
+    if not rows:
+        return []
+
+    # Agrupar filas por exam_id
+    exams_grouped = defaultdict(list)
+    for row in rows:
+        exams_grouped[row.exam_id].append(row)
+
+    # Convertir cada grupo a un HineExam
+    exams = []
+    for exam_rows in exams_grouped.values():
+        exam = to_exam_response_from_rows(exam_rows)
+        exams.append(exam)
+
+    return exams

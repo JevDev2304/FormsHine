@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel,  ConfigDict
 from datetime import date
 from app.models.item import Items
@@ -9,17 +10,17 @@ class CreateItem(BaseModel):
     description: Optional[str] = None
     right_asimetric_count : Optional[int] = 0 
     left_asimetric_count: Optional[int] = 0
-    section_id: int
+    section_id: UUID
     model_config = ConfigDict(from_attributes=True)
 
 class ItemResponse(BaseModel):
-    id: int 
+    id: UUID 
     title: str
     score: int
     description: str
     right_asimetric_count : int 
     left_asimetric_count: int 
-    section_id: int
+    section_id: UUID
     model_config = ConfigDict(from_attributes=True)
 
 

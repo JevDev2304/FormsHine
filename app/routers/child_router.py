@@ -6,7 +6,6 @@ from app.models.child import Children as Child
 from app.services.exam_service import ExamService
 from app.services.section_service import SectionService
 from app.services.item_service import ItemService
-from app.schemas.exam import CreateExam
 from app.schemas.section import CreateSection
 from app.schemas.item import CreateItem
 from app.auth.auth_utils import get_current_user
