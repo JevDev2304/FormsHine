@@ -138,9 +138,11 @@ def build_exams_from_rows(rows: list[Any]) -> List[HineExam]:
         exams_grouped[row.exam_id].append(row)
 
     # Convertir cada grupo a un HineExam
-    exams = []
+    exams: List[HineExam] = []
     for exam_rows in exams_grouped.values():
         exam = to_exam_response_from_rows(exam_rows)
         exams.append(exam)
+
+    exams.sort(key=lambda e: e.examDate, reverse=True)
 
     return exams
