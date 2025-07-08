@@ -17,7 +17,6 @@ def to_exam_model(hine_exam: HineExam) -> Exams:
         id= hine_exam.examId,
         name="Hine Exam",
         eliminated=False,
-        description=hine_exam.description,
         child_id=hine_exam.patientId,
         doctor_id=hine_exam.userId,
         created_at=hine_exam.examDate
@@ -26,10 +25,17 @@ def to_exam_model(hine_exam: HineExam) -> Exams:
 
 
 def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
+    from app.services.hine_exam_service import HineExamService
+
     if not rows:
         raise ValueError("No data found for exam")
 
     first = rows[0]
+
+    analysis_general_comments = []
+    motor_general_comments = []
+    behavior_general_comments = []
+
 
     # Acumuladores
     analysis_modules = []
@@ -54,6 +60,10 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
             responses = []
 
             for row in section_rows:
+                comments_raw = row.section_comments or ""
+                analysis_general_comments = comments_raw.split(HineExamService.SEPARATOR_SECTION_COMMENTS)
+                print("-------------------")
+                print(analysis_general_comments)
                 responses.append(QuestionResponse(
                     questionId=row.item_title,
                     selectedValue=row.item_score,
@@ -61,7 +71,7 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
                     leftAsymmetry=bool(row.left_asimetric_count),
                     rightAsymmetry=bool(row.right_asimetric_count),
                 ))
-                #TODO: esto me lo manda cristian literal, lo estoy calculando pa nada
+
                 module_score += row.item_score or 0
                 max_score += 3
                 total_left += row.left_asimetric_count or 0
@@ -74,8 +84,11 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
             ))
             analysis_score += module_score
 
-    # Procesar motor milestones
+    # Motor milestones
     for row in sections.get("motor_milestones", []):
+        comments_raw = row.section_comments or ""
+        motor_general_comments = comments_raw.split(HineExamService.SEPARATOR_SECTION_COMMENTS)
+
         motor_responses.append(QuestionResponse(
             questionId=row.item_title,
             selectedValue=row.item_score,
@@ -84,13 +97,17 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
             rightAsymmetry=bool(row.right_asimetric_count),
         ))
 
-    # Procesar behavior
+    # Behavior
     for row in sections.get("behavior", []):
+        comments_raw = row.section_comments or ""
+        behavior_general_comments = comments_raw.split(HineExamService.SEPARATOR_SECTION_COMMENTS)
+
         behavior_responses.append(BehaviorResponse(
             questionId=row.item_title,
             selectedValue=row.item_score,
             comment=row.item_description,
         ))
+
 
     return HineExam(
         examId=first.exam_id,
@@ -98,16 +115,16 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
         userId=first.doctor_id,
         doctorName=first.doctor_name,
         examDate = first.exam_created_at.strftime("%Y-%m-%d"),
-        description=first.exam_description,
         analysis=AnalysisData(
             modules=analysis_modules,
             totalScore=analysis_score,
             maxPossibleScore=max_score,
             totalRightAsymmetries=total_right,
             totalLeftAsymmetries=total_left,
+            generalComments=analysis_general_comments
         ),
-        motorMilestones=MotorMilestoneData(responses=motor_responses),
-        behavior=BehaviorData(responses=behavior_responses),
+        motorMilestones=MotorMilestoneData(responses=motor_responses, generalComments=motor_general_comments),
+        behavior=BehaviorData(responses=behavior_responses, generalComments=behavior_general_comments),
     )
 
 

@@ -26,17 +26,20 @@ class AnalysisData(BaseModel):
     modules: List[ModuleResponse]
     totalScore: int
     maxPossibleScore: int
+    generalComments: List[str]
     totalRightAsymmetries: int
     totalLeftAsymmetries: int
     model_config = ConfigDict(from_attributes=True)
 
 class MotorMilestoneData(BaseModel):
     responses: List[QuestionResponse]
+    generalComments: List[str]
     model_config = ConfigDict(from_attributes=True)
 
 
 class BehaviorData(BaseModel):
     responses: List[BehaviorResponse]
+    generalComments: List[str]
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -46,7 +49,6 @@ class HineExam(BaseModel):
     userId: str
     doctorName: Optional[str] = None
     examDate: str
-    description: str = ""
     analysis: AnalysisData
     motorMilestones: MotorMilestoneData
     behavior: BehaviorData

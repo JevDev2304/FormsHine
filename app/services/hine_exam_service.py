@@ -17,6 +17,7 @@ from app.schemas.item import CreateItem
 from app.database.database import engine
 
 class HineExamService:
+    SEPARATOR_SECTION_COMMENTS = "|||"
     def __init__(
         self,
         exam_service: Optional[ExamService] = None,
@@ -163,8 +164,8 @@ class HineExamService:
 
             for module in hine_exam.analysis.modules:
                 #TODO: cambiar hine_exam.id al id creado si lo genero yo
-                section = self._create_section(hine_exam.examId, "analysis:"+module.moduleId)
-                print("ESTAMOS ES CHILL")
+                section = self._create_section(created_exam.id, "analysis:"+module.moduleId, hine_exam.analysis.generalComments)
+
                 section_ids[module.moduleId] = section.id
 
                 for item in module.responses:
@@ -178,7 +179,7 @@ class HineExamService:
                     )
 
             # Motor milestones
-            motor_section = self._create_section(created_exam.id, "motor_milestones")
+            motor_section = self._create_section(created_exam.id, "motor_milestones", section_comments=hine_exam.motorMilestones.generalComments)
             for item in hine_exam.motorMilestones.responses:
                 self._create_item(
                     section_id=motor_section.id,
@@ -190,7 +191,7 @@ class HineExamService:
                 )
 
             # Behavior
-            behavior_section = self._create_section(created_exam.id, "behavior")
+            behavior_section = self._create_section(created_exam.id, "behavior", section_comments=hine_exam.behavior.generalComments)
             for item in hine_exam.behavior.responses:
                 self._create_item(
                     section_id=behavior_section.id,
@@ -227,7 +228,7 @@ class HineExamService:
             if session:
                 session.close()
 
-    def _create_section(self, exam_id: str, section_name: str) -> SectionResponse:
+    def _create_section(self, exam_id: str, section_name: str, section_comments: List[str]) -> SectionResponse:
         """
         Método helper para crear una sección con manejo de errores.
         
@@ -241,10 +242,13 @@ class HineExamService:
         Raises:
             HTTPException: Si hay un error al crear la sección
         """
+        final_section_comments = self.SEPARATOR_SECTION_COMMENTS.join(section_comments)
+
         try:
             section_data = CreateSection(
                 section_name=section_name,
-                id_exam=exam_id
+                id_exam=exam_id,
+                section_comments=final_section_comments
             )
             return self.section_service.create_section(section_data)
         except Exception as e:
