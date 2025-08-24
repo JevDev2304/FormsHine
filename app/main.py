@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware 
 from fastapi.security import HTTPBearer
+from app.routers.advisor_router import router as advisor_router
 from app.routers.child_router import router as child_router
 from app.routers.hine_exam import router as hine_exam_router
 from app.middleware.auth_middleware import verify_jwt_token
@@ -15,7 +16,8 @@ app = FastAPI(
     version="1.0.0",
     openapi_tags=[
         {"name": "Children", "description": "Operaciones relacionadas con niños"},
-        {"name": "Hine Exam", "description": "Operaciones relacionadas con exámenes HINE"}
+        {"name": "Hine Exam", "description": "Operaciones relacionadas con exámenes HINE"},
+        {"name": "Advisor", "description": "Operaciones relacionadas con exámenes HINE"}
     ]
 )
 
@@ -41,3 +43,4 @@ async def test_token(current_user: dict = Depends(get_current_user)):
 # Incluir los routers
 app.include_router(child_router, prefix="/children", tags=["Children"])
 app.include_router(hine_exam_router, prefix="/hineExam", tags=["Hine Exam"])
+app.include_router(advisor_router, prefix="/advisors", tags=["Advisor"])
