@@ -7,7 +7,7 @@ from app.routers.hine_exam import router as hine_exam_router
 from app.middleware.auth_middleware import verify_jwt_token
 from app.auth.auth_utils import get_current_user
 
-# Configurar el esquema de seguridad
+# Configurar el esquema de seguridad HTTP Bearer
 security_scheme = HTTPBearer()
 
 app = FastAPI(
