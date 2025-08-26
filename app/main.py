@@ -11,6 +11,7 @@ from app.auth.auth_utils import get_current_user
 security_scheme = HTTPBearer()
 
 app = FastAPI(
+    root_path="/hine/form",
     title="FormsHine API",
     description="API para gestión de formularios HINE con autenticación JWT",
     version="1.0.0",
