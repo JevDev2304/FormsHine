@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
+from app.schemas.child import ChildUpdate
 from app.services.child_service import ChildService
 from app.services.exam_service import ExamService
 from app.services.section_service import SectionService
@@ -265,15 +266,13 @@ class HineExamService:
         
     def _updateChildrenData(self, child_id: str, gestational_age: str, cronological_age: str, corrected_age: str, head_circumference: str):
         try:
-            childService.update_child(
-                child_id,
-                {
-                    "gestational_age": gestational_age,
-                    "cronological_age": cronological_age,
-                    "corrected_age": corrected_age,
-                    "head_circumference": head_circumference
-                }
+            update_data = ChildUpdate(
+                gestational_age=gestational_age,
+                cronological_age=cronological_age,
+                corrected_age=corrected_age,
+                head_circumference=head_circumference
             )
+            childService.update_child(child_id, update_data)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

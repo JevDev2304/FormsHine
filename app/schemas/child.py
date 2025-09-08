@@ -1,4 +1,5 @@
 # schemas/child.py
+from typing import Optional
 from pydantic import BaseModel,  ConfigDict
 from datetime import date
 from app.models.child import Children as Child
@@ -27,6 +28,17 @@ class ChildCreate(BaseModel):
     birth_date: date
     exam_date: date
 
+class ChildUpdate(BaseModel):
+    name: Optional[str] = None
+    last_name: Optional[str] = None
+    gestational_age: Optional[str] = None
+    cronological_age: Optional[str] = None
+    corrected_age: Optional[str] = None
+    head_circumference: Optional[str] = None
+    birth_date: Optional[date] = None
+    exam_date: Optional[date] = None
+
+    
 def to_child_response(child: Child) -> ChildResponse:
     return ChildResponse.model_validate(child)
 
