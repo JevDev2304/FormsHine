@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
+from app.services.child_service import ChildService
 from app.services.exam_service import ExamService
 from app.services.section_service import SectionService
 from app.services.item_service import ItemService
@@ -15,6 +16,8 @@ from app.schemas.item import CreateItem
 
 # Database
 from app.database.database import engine
+
+childService = ChildService()
 
 class HineExamService:
     SEPARATOR_SECTION_COMMENTS = "|||"
@@ -104,8 +107,9 @@ class HineExamService:
                     WHERE exam_id = :exam_id
                     ORDER BY section_id, item_id
                 """)
-                
+
                 result = session.exec(sql.bindparams(exam_id=exam_id))
+                print(exam_id)
                 rows = result.all()
                 
                 if not rows:
@@ -200,6 +204,8 @@ class HineExamService:
                     description=item.comment
                 )
 
+            self._updateChildrenData(hine_exam.patientId, hine_exam.gestationalAge, hine_exam.cronologicalAge, hine_exam.correctedAge, hine_exam.headCircumference)
+
             session.commit()
 
             # Obtener el examen recién creado desde la vista para retornar respuesta completa
@@ -255,4 +261,21 @@ class HineExamService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Error creating section '{section_name}': {str(e)}"
+            )
+        
+    def _updateChildrenData(self, child_id: str, gestational_age: str, cronological_age: str, corrected_age: str, head_circumference: str):
+        try:
+            childService.update_child(
+                child_id,
+                {
+                    "gestational_age": gestational_age,
+                    "cronological_age": cronological_age,
+                    "corrected_age": corrected_age,
+                    "head_circumference": head_circumference
+                }
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Error updating children '{child_id}': {str(e)}"
             )

@@ -12,6 +12,7 @@ service = HineExamService()
 @router.post("/", response_model=HineExam, status_code=status.HTTP_201_CREATED)
 async def create_hine_exam(exam: HineExam, current_user: dict = Depends(get_current_user)):
     try:
+        print(exam)
         return service.create_exam(exam)
     except HTTPException as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
