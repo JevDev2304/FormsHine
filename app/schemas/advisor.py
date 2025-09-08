@@ -1,4 +1,5 @@
 # schemas/child.py
+from typing import Optional
 from pydantic import BaseModel,  ConfigDict
 from datetime import date
 
@@ -19,6 +20,15 @@ class AdvisorCreate(BaseModel):
     last_name : str
     phone_number: str
     email: str
+    child_id: str
+    relationship: str
+
+class AdvisorUpdate(BaseModel):
+    id: str
+    name: Optional[str] = None
+    last_name : Optional[str] = None
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
     child_id: str
     relationship: str
 
