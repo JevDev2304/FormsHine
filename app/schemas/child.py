@@ -8,10 +8,6 @@ class ChildResponse(BaseModel):
     id: str
     name: str
     last_name: str
-    gestational_age: str
-    cronological_age: str
-    corrected_age: str
-    head_circumference: str
     birth_date: date
     exam_date: date
 
@@ -21,20 +17,12 @@ class ChildCreate(BaseModel):
     id: str
     name: str
     last_name: str
-    gestational_age: str
-    cronological_age: str
-    corrected_age: str
-    head_circumference: str
     birth_date: date
     exam_date: date
 
 class ChildUpdate(BaseModel):
     name: Optional[str] = None
     last_name: Optional[str] = None
-    gestational_age: Optional[str] = None
-    cronological_age: Optional[str] = None
-    corrected_age: Optional[str] = None
-    head_circumference: Optional[str] = None
     birth_date: Optional[date] = None
     exam_date: Optional[date] = None
 
