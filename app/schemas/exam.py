@@ -52,5 +52,9 @@ class HineExam(BaseModel):
     analysis: AnalysisData
     motorMilestones: MotorMilestoneData
     behavior: BehaviorData
+    gestationalAge:str
+    cronologicalAge:str
+    correctedAge:str
+    headCircumference:str
     model_config = ConfigDict(from_attributes=True)
 

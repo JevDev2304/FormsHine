@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
-from app.schemas.child import ChildResponse, ChildCreate
+from app.schemas.child import ChildResponse, ChildCreate, ChildUpdate
 from app.services.child_service import ChildService
 from app.models.child import Children as Child
 from app.services.exam_service import ExamService
@@ -32,7 +32,7 @@ async def create_child(child: ChildCreate, current_user: dict = Depends(get_curr
     return service.create_child(child)
 
 @router.put("/{child_id}", response_model=ChildResponse)
-async def update_child(child_id: str, child: Child, current_user: dict = Depends(get_current_user)):
+async def update_child(child_id: str, child: ChildUpdate, current_user: dict = Depends(get_current_user)):
     updated_child = service.update_child(child_id, child)
     if updated_child is None:
         raise HTTPException(status_code=404, detail="Child not found")

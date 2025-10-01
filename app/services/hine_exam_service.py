@@ -9,6 +9,8 @@ from xhtml2pdf import pisa
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
+from app.schemas.child import ChildUpdate
+from app.services.child_service import ChildService
 from app.services.exam_service import ExamService
 from app.services.section_service import SectionService
 from app.services.item_service import ItemService
@@ -22,6 +24,9 @@ from app.schemas.item import CreateItem
 from app.database.database import engine
 
 
+# ============================
+# Etiquetas y utilidades (ES)
+# ============================
 MODULE_LABELS_ES = {
     "posture": "Postura",
     "cranialNerves": "Nervios craneales",
@@ -78,14 +83,15 @@ def _date_es(value: str | None) -> str:
     return f"{d.day:02d} {meses[d.month-1]} {d.year}"
 
 
-
 class HineExamService:
     SEPARATOR_SECTION_COMMENTS = "|||"
+
     def __init__(
         self,
         exam_service: Optional[ExamService] = None,
         section_service: Optional[SectionService] = None,
-        item_service: Optional[ItemService] = None
+        item_service: Optional[ItemService] = None,
+        child_service: Optional[ChildService] = None,
     ):
         """
         Inicializa el servicio con las dependencias inyectadas.
@@ -94,6 +100,7 @@ class HineExamService:
         self.exam_service = exam_service or ExamService()
         self.section_service = section_service or SectionService()
         self.item_service = item_service or ItemService()
+        self.child_service = child_service or ChildService()
 
     def _create_item(
         self,
@@ -147,7 +154,7 @@ class HineExamService:
                     WHERE exam_id = :exam_id
                     ORDER BY section_id, item_id
                 """)
-                
+
                 result = session.exec(sql.bindparams(exam_id=exam_id))
                 rows = result.all()
                 
@@ -242,6 +249,15 @@ class HineExamService:
                     score=item.selectedValue,
                     description=item.comment
                 )
+
+            # Actualizar datos del niño en su ficha
+            self._updateChildrenData(
+                hine_exam.patientId,
+                hine_exam.gestationalAge,
+                hine_exam.cronologicalAge,
+                hine_exam.correctedAge,
+                hine_exam.headCircumference
+            )
 
             session.commit()
 
@@ -454,3 +470,21 @@ class HineExamService:
         pdf_io = BytesIO()
         pisa.CreatePDF(html, dest=pdf_io)
         return pdf_io.getvalue()
+
+    # ============================
+    # Actualización de datos niño
+    # ============================
+    def _updateChildrenData(self, child_id: str, gestational_age: str, cronological_age: str, corrected_age: str, head_circumference: str):
+        try:
+            update_data = ChildUpdate(
+                gestational_age=gestational_age,
+                cronological_age=cronological_age,
+                corrected_age=corrected_age,
+                head_circumference=head_circumference
+            )
+            self.child_service.update_child(child_id, update_data)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Error updating children '{child_id}': {str(e)}"
+            )

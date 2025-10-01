@@ -9,10 +9,6 @@ class Children(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     last_name: str
-    gestational_age: str
-    cronological_age: str
-    corrected_age: str
-    head_circumference: str
     birth_date: date
     exam_date: date
     eliminated: Optional[int] = Field(default=0)

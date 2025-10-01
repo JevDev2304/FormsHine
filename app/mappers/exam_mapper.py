@@ -19,6 +19,10 @@ def to_exam_model(hine_exam: HineExam) -> Exams:
         eliminated=False,
         child_id=hine_exam.patientId,
         doctor_id=hine_exam.userId,
+        gestational_age=hine_exam.gestationalAge,
+  cronological_age=hine_exam.cronologicalAge,
+  corrected_age=hine_exam.correctedAge,
+  head_circumference=hine_exam.headCircumference,
         created_at=hine_exam.examDate
         # created_at se genera automáticamente si no se especifica
     )
@@ -125,6 +129,10 @@ def to_exam_response_from_rows(rows: list[Any]) -> HineExam:
         ),
         motorMilestones=MotorMilestoneData(responses=motor_responses, generalComments=motor_general_comments),
         behavior=BehaviorData(responses=behavior_responses, generalComments=behavior_general_comments),
+        gestationalAge=first.gestational_age,
+        cronologicalAge=first.cronological_age,
+        correctedAge=first.corrected_age,
+        headCircumference=first.head_circumference,
     )
 
 
