@@ -106,20 +106,6 @@ class HineExamService:
     ) -> Any:
         """
         Crea un ítem usando el modelo Pydantic ItemCreate.
-        
-        Args:
-            section_id: ID de la sección a la que pertenece el ítem
-            title: Título del ítem
-            score: Puntuación del ítem
-            description: Descripción del ítem
-            right_asimetric_count: Conteo asimétrico derecho (opcional)
-            left_asimetric_count: Conteo asimétrico izquierdo (opcional)
-            
-        Returns:
-            El ítem creado
-            
-        Raises:
-            HTTPException: Si hay un error al crear el ítem
         """
         try:
             item_data = CreateItem(
@@ -140,12 +126,6 @@ class HineExamService:
     def _validate_required_fields(self, hine_exam: HineExam) -> None:
         """
         Valida los campos requeridos antes de procesar el examen.
-        
-        Args:
-            hine_exam: Datos del examen a validar
-            
-        Raises:
-            HTTPException: Si faltan campos requeridos
         """
         if not hine_exam.patientId:
             raise HTTPException(
@@ -329,12 +309,13 @@ class HineExamService:
         - Minimalista, en español y legible para médicos.
         - Encabezado con 'El Comite'.
         - Salto de página entre exámenes.
+        Funciona tanto si los exámenes vienen como dicts (recomendado) como si vienen como modelos Pydantic.
         """
         exams = self.get_exams_by_children(child_id)
         if not exams:
             raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
 
-        esc = lambda s: html_escape(str(s or ""))
+        esc = lambda s: html_escape(str(s if s is not None else ""))
         COMPANY_TITLE = "El Comite"
 
         # Cabecera y estilos (compatibles con xhtml2pdf)
@@ -362,59 +343,107 @@ class HineExamService:
   <div>Paciente: {esc(child_id)} · Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
 """]
 
-        # Un bloque por examen
         for idx, exam in enumerate(exams):
+            # Asegurar dict
+            if isinstance(exam, dict):
+                data = exam
+            else:
+                # Intentar convertir si es un modelo
+                try:
+                    data = exam.dict()
+                except Exception:
+                    try:
+                        data = exam.model_dump()
+                    except Exception:
+                        raise HTTPException(status_code=500, detail="Formato de examen no soportado (se esperaba dict).")
+
             if idx > 0:
-                # Salto de página entre exámenes
                 html_parts.append('<p style="page-break-before: always;"></p>')
+
+            examId = data.get("examId", "")
+            patientId = data.get("patientId", "")
+            doctorName = data.get("doctorName", "")
+            examDate = _date_es(data.get("examDate"))
+
+            gestationalAge = data.get("gestationalAge", "")
+            cronologicalAge = data.get("cronologicalAge", "")
+            correctedAge = data.get("correctedAge", "")
+            headCircumference = data.get("headCircumference", "")
+
+            analysis = data.get("analysis", {}) or {}
+            modules = analysis.get("modules", []) or []
+            totalScore = analysis.get("totalScore", "")
+            maxPossibleScore = analysis.get("maxPossibleScore", "")
+            totalLeftAsymmetries = analysis.get("totalLeftAsymmetries", "")
+            totalRightAsymmetries = analysis.get("totalRightAsymmetries", "")
+
+            motor = data.get("motorMilestones", {}) or {}
+            motor_resps = motor.get("responses", []) or []
+
+            behavior = data.get("behavior", {}) or {}
+            behavior_resps = behavior.get("responses", []) or []
 
             html_parts.append(f"""
   <h2>Examen #{idx+1}</h2>
-  <p><strong>ID Examen:</strong> {esc(getattr(exam, 'examId', ''))} &nbsp;·&nbsp; <strong>Fecha:</strong> {_date_es(getattr(exam, 'examDate', None))}</p>
-  <p><strong>Médico:</strong> {esc(getattr(exam, 'doctorName', ''))}</p>
-""")
+  <p><strong>ID Examen:</strong> {esc(examId)} &nbsp;·&nbsp; <strong>Fecha:</strong> {esc(examDate)}</p>
+  <p><strong>Médico:</strong> {esc(doctorName)} &nbsp;·&nbsp; <strong>ID Paciente:</strong> {esc(patientId)}</p>
+  <p><strong>Edad gestacional (sem):</strong> {esc(gestationalAge)} &nbsp;·&nbsp; <strong>Edad cronológica (mes):</strong> {esc(cronologicalAge)} &nbsp;·&nbsp; <strong>Edad corregida (mes):</strong> {esc(correctedAge)} &nbsp;·&nbsp; <strong>PC (cm):</strong> {esc(headCircumference)}</p>
 
-            anal = exam.analysis
-            html_parts.append(f"""
   <h3>Puntaje global</h3>
   <table>
     <tr><th>Total</th><th>Máximo</th><th>Asim. izq.</th><th>Asim. der.</th></tr>
     <tr>
-      <td>{anal.totalScore}</td>
-      <td>{anal.maxPossibleScore}</td>
-      <td>{anal.totalLeftAsymmetries}</td>
-      <td>{anal.totalRightAsymmetries}</td>
+      <td>{esc(totalScore)}</td>
+      <td>{esc(maxPossibleScore)}</td>
+      <td>{esc(totalLeftAsymmetries)}</td>
+      <td>{esc(totalRightAsymmetries)}</td>
     </tr>
   </table>
 """)
 
             # Módulos
             html_parts.append("<h3>Módulos</h3>")
-            for m in anal.modules:
-                html_parts.append(f"<p><strong>{esc(_label_module(m.moduleId))}</strong> – Puntaje: {m.obtainedScore}</p>")
+            for m in modules:
+                moduleId = (m or {}).get("moduleId", "")
+                obtainedScore = (m or {}).get("obtainedScore", "")
+                responses = (m or {}).get("responses", []) or []
+
+                html_parts.append(f"<p><strong>{esc(_label_module(moduleId))}</strong> – Puntaje: {esc(obtainedScore)}</p>")
                 html_parts.append("<table><tr><th>Ítem</th><th>Valor</th><th>Izq.</th><th>Der.</th><th>Comentario</th></tr>")
-                for r in m.responses:
+
+                for r in responses:
+                    qid = (r or {}).get("questionId", "")
+                    val = (r or {}).get("selectedValue", "")
+                    la = (r or {}).get("leftAsymmetry", False)
+                    ra = (r or {}).get("rightAsymmetry", False)
+                    cmt = (r or {}).get("comment", "") or "—"
                     html_parts.append(
-                        f"<tr><td>{esc(_label_question(r.questionId))}</td>"
-                        f"<td>{r.selectedValue}</td>"
-                        f"<td>{'Sí' if r.leftAsymmetry else 'No'}</td>"
-                        f"<td>{'Sí' if r.rightAsymmetry else 'No'}</td>"
-                        f"<td>{esc(r.comment or '—')}</td></tr>"
+                        f"<tr>"
+                        f"<td>{esc(_label_question(qid))}</td>"
+                        f"<td>{esc(val)}</td>"
+                        f"<td>{'Sí' if la else 'No'}</td>"
+                        f"<td>{'Sí' if ra else 'No'}</td>"
+                        f"<td>{esc(cmt)}</td>"
+                        f"</tr>"
                     )
                 html_parts.append("</table>")
 
             # Hitos motores
-            mm = exam.motorMilestones
             html_parts.append("<h3>Hitos motores</h3><table><tr><th>Hito</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in mm.responses:
-                html_parts.append(f"<tr><td>{esc(_label_question(r.questionId))}</td><td>{r.selectedValue}</td><td>{esc(r.comment or '—')}</td></tr>")
+            for r in motor_resps:
+                qid = (r or {}).get("questionId", "")
+                val = (r or {}).get("selectedValue", "")
+                cmt = (r or {}).get("comment", "") or "—"
+                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
             html_parts.append("</table>")
 
             # Comportamiento
-            beh = exam.behavior
             html_parts.append("<h3>Comportamiento</h3><table><tr><th>Dimensión</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in beh.responses:
-                html_parts.append(f"<tr><td>{esc(_label_question(r.questionId))}</td><td>{r.selectedValue}</td><td>{esc(r.comment or '—')}</td></tr>")
+            for r in behavior_resps:
+                qid = (r or {}).get("questionId", "")
+                val = (r or {}).get("selectedValue", "")
+                cmt = (r or {}).get("comment", "") or "—"
+                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
             html_parts.append("</table>")
 
         # Cierre HTML
