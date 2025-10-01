@@ -1,6 +1,11 @@
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session, text
 from fastapi import HTTPException, status
+from io import BytesIO
+from datetime import datetime
+from html import escape as html_escape
+from xhtml2pdf import pisa
+
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
@@ -18,15 +23,75 @@ from app.schemas.item import CreateItem
 # Database
 from app.database.database import engine
 
-childService = ChildService()
+
+# ============================
+# Etiquetas y utilidades (ES)
+# ============================
+MODULE_LABELS_ES = {
+    "posture": "Postura",
+    "cranialNerves": "Nervios craneales",
+    "movements": "Movimientos",
+    "tone": "Tono",
+    "reflexesAndReaction": "Reflejos y reacciones",
+}
+
+QUESTION_LABELS_ES = {
+    # Postura
+    "head": "Cabeza", "arms": "Brazos", "feet": "Pies", "hands": "Manos",
+    "legs": "Piernas", "trunk": "Tronco",
+    # Nervios craneales
+    "eyeMovements": "Movimientos oculares", "suckingSwallowing": "Succión/deglución",
+    "visualResponse": "Respuesta visual", "facialAppearance": "Apariencia facial",
+    "auditoryResponse": "Respuesta auditiva",
+    # Movimientos
+    "amount": "Cantidad", "quality": "Calidad",
+    # Tono
+    "pronationPupination": "Pronación/supinación", "pullToSit": "Tracción a sedestación",
+    "passiveShoulderElevation": "Elevación pasiva del hombro", "ankleSorsiflexion": "Dorsiflexión del tobillo",
+    "poplitealAngle": "Ángulo poplíteo", "scarfSign": "Signo del pañuelo",
+    "hipAdductors": "Aductores de cadera", "ventralSuspension": "Suspensión ventral",
+    # Reflejos y reacciones
+    "armProtection": "Protección de brazos", "parachute": "Paracaídas",
+    "tendonReflexes": "Reflejos tendinosos", "lateralSuspension": "Suspensión lateral",
+    "verticalSuspension": "Suspensión vertical",
+    # Hitos motores
+    "LegKicking": "Pataleo", "CephalicControl": "Control cefálico", "Walking": "Marcha",
+    "Sitting": "Sedestación", "VoluntaryGrasp": "Prensión voluntaria", "Rolling": "Rodamiento",
+    "Crawling": "Gateo", "Standing": "Bipedestación",
+    # Comportamiento
+    "SocialInteraction": "Interacción social", "EmotionalState": "Estado emocional",
+    "StateOfConsciousness": "Estado de conciencia",
+}
+
+def _label_module(mid: str) -> str:
+    return MODULE_LABELS_ES.get(mid, mid)
+
+def _label_question(qid: str) -> str:
+    return QUESTION_LABELS_ES.get(qid, qid)
+
+def _date_es(value: str | None) -> str:
+    if not value:
+        return "—"
+    try:
+        d = datetime.fromisoformat(value)
+    except Exception:
+        try:
+            d = datetime.strptime(value, "%Y-%m-%d")
+        except Exception:
+            return value
+    meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
+    return f"{d.day:02d} {meses[d.month-1]} {d.year}"
+
 
 class HineExamService:
     SEPARATOR_SECTION_COMMENTS = "|||"
+
     def __init__(
         self,
         exam_service: Optional[ExamService] = None,
         section_service: Optional[SectionService] = None,
-        item_service: Optional[ItemService] = None
+        item_service: Optional[ItemService] = None,
+        child_service: Optional[ChildService] = None,
     ):
         """
         Inicializa el servicio con las dependencias inyectadas.
@@ -35,6 +100,7 @@ class HineExamService:
         self.exam_service = exam_service or ExamService()
         self.section_service = section_service or SectionService()
         self.item_service = item_service or ItemService()
+        self.child_service = child_service or ChildService()
 
     def _create_item(
         self,
@@ -47,20 +113,6 @@ class HineExamService:
     ) -> Any:
         """
         Crea un ítem usando el modelo Pydantic ItemCreate.
-        
-        Args:
-            section_id: ID de la sección a la que pertenece el ítem
-            title: Título del ítem
-            score: Puntuación del ítem
-            description: Descripción del ítem
-            right_asimetric_count: Conteo asimétrico derecho (opcional)
-            left_asimetric_count: Conteo asimétrico izquierdo (opcional)
-            
-        Returns:
-            El ítem creado
-            
-        Raises:
-            HTTPException: Si hay un error al crear el ítem
         """
         try:
             item_data = CreateItem(
@@ -81,12 +133,6 @@ class HineExamService:
     def _validate_required_fields(self, hine_exam: HineExam) -> None:
         """
         Valida los campos requeridos antes de procesar el examen.
-        
-        Args:
-            hine_exam: Datos del examen a validar
-            
-        Raises:
-            HTTPException: Si faltan campos requeridos
         """
         if not hine_exam.patientId:
             raise HTTPException(
@@ -110,7 +156,6 @@ class HineExamService:
                 """)
 
                 result = session.exec(sql.bindparams(exam_id=exam_id))
-                print(exam_id)
                 rows = result.all()
                 
                 if not rows:
@@ -205,7 +250,14 @@ class HineExamService:
                     description=item.comment
                 )
 
-            self._updateChildrenData(hine_exam.patientId, hine_exam.gestationalAge, hine_exam.cronologicalAge, hine_exam.correctedAge, hine_exam.headCircumference)
+            # Actualizar datos del niño en su ficha
+            self._updateChildrenData(
+                hine_exam.patientId,
+                hine_exam.gestationalAge,
+                hine_exam.cronologicalAge,
+                hine_exam.correctedAge,
+                hine_exam.headCircumference
+            )
 
             session.commit()
 
@@ -263,7 +315,165 @@ class HineExamService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Error creating section '{section_name}': {str(e)}"
             )
-        
+
+    # ============================================================
+    # NUEVO MÉTODO: Historia clínica (TODOS los exámenes) en PDF
+    # ============================================================
+    def get_child_history_pdf(self, child_id: str) -> bytes:
+        """
+        Genera un PDF con la HISTORIA CLÍNICA HINE (TODOS los exámenes) del niño.
+        - Minimalista, en español y legible para médicos.
+        - Encabezado con 'El Comite'.
+        - Salto de página entre exámenes.
+        Funciona tanto si los exámenes vienen como dicts (recomendado) como si vienen como modelos Pydantic.
+        """
+        exams = self.get_exams_by_children(child_id)
+        if not exams:
+            raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
+
+        esc = lambda s: html_escape(str(s if s is not None else ""))
+        COMPANY_TITLE = "El Comite"
+
+        # Cabecera y estilos (compatibles con xhtml2pdf)
+        html_parts = [f"""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<title>{esc(COMPANY_TITLE)} - Historia clínica HINE - Paciente {esc(child_id)}</title>
+<style>
+  @page {{ size: A4; margin: 18mm; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; }}
+  h1 {{ font-size: 18px; margin: 0 0 6px 0; }}
+  h2 {{ font-size: 14px; margin: 12px 0 6px 0; }}
+  h3 {{ font-size: 12.5px; margin: 8px 0 4px 0; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 6px 0 10px; }}
+  th, td {{ border: 1px solid #aaa; padding: 6px; text-align: left; vertical-align: top; }}
+  th {{ background: #f3f3f3; }}
+</style>
+</head>
+<body>
+  <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:6px;">{esc(COMPANY_TITLE)}</div>
+  <div style="text-align:center; font-size:11px; color:#555; margin-bottom:10px;">Historia clínica – Hammersmith Infant Neurological Examination</div>
+  <h1>Historia clínica HINE</h1>
+  <div>Paciente: {esc(child_id)} · Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
+"""]
+
+        for idx, exam in enumerate(exams):
+            # Asegurar dict
+            if isinstance(exam, dict):
+                data = exam
+            else:
+                # Intentar convertir si es un modelo
+                try:
+                    data = exam.dict()
+                except Exception:
+                    try:
+                        data = exam.model_dump()
+                    except Exception:
+                        raise HTTPException(status_code=500, detail="Formato de examen no soportado (se esperaba dict).")
+
+            if idx > 0:
+                html_parts.append('<p style="page-break-before: always;"></p>')
+
+            examId = data.get("examId", "")
+            patientId = data.get("patientId", "")
+            doctorName = data.get("doctorName", "")
+            examDate = _date_es(data.get("examDate"))
+
+            gestationalAge = data.get("gestationalAge", "")
+            cronologicalAge = data.get("cronologicalAge", "")
+            correctedAge = data.get("correctedAge", "")
+            headCircumference = data.get("headCircumference", "")
+
+            analysis = data.get("analysis", {}) or {}
+            modules = analysis.get("modules", []) or []
+            totalScore = analysis.get("totalScore", "")
+            maxPossibleScore = analysis.get("maxPossibleScore", "")
+            totalLeftAsymmetries = analysis.get("totalLeftAsymmetries", "")
+            totalRightAsymmetries = analysis.get("totalRightAsymmetries", "")
+
+            motor = data.get("motorMilestones", {}) or {}
+            motor_resps = motor.get("responses", []) or []
+
+            behavior = data.get("behavior", {}) or {}
+            behavior_resps = behavior.get("responses", []) or []
+
+            html_parts.append(f"""
+  <h2>Examen #{idx+1}</h2>
+  <p><strong>ID Examen:</strong> {esc(examId)} &nbsp;·&nbsp; <strong>Fecha:</strong> {esc(examDate)}</p>
+  <p><strong>Médico:</strong> {esc(doctorName)} &nbsp;·&nbsp; <strong>ID Paciente:</strong> {esc(patientId)}</p>
+  <p><strong>Edad gestacional (sem):</strong> {esc(gestationalAge)} &nbsp;·&nbsp; <strong>Edad cronológica (mes):</strong> {esc(cronologicalAge)} &nbsp;·&nbsp; <strong>Edad corregida (mes):</strong> {esc(correctedAge)} &nbsp;·&nbsp; <strong>PC (cm):</strong> {esc(headCircumference)}</p>
+
+  <h3>Puntaje global</h3>
+  <table>
+    <tr><th>Total</th><th>Máximo</th><th>Asim. izq.</th><th>Asim. der.</th></tr>
+    <tr>
+      <td>{esc(totalScore)}</td>
+      <td>{esc(maxPossibleScore)}</td>
+      <td>{esc(totalLeftAsymmetries)}</td>
+      <td>{esc(totalRightAsymmetries)}</td>
+    </tr>
+  </table>
+""")
+
+            # Módulos
+            html_parts.append("<h3>Módulos</h3>")
+            for m in modules:
+                moduleId = (m or {}).get("moduleId", "")
+                obtainedScore = (m or {}).get("obtainedScore", "")
+                responses = (m or {}).get("responses", []) or []
+
+                html_parts.append(f"<p><strong>{esc(_label_module(moduleId))}</strong> – Puntaje: {esc(obtainedScore)}</p>")
+                html_parts.append("<table><tr><th>Ítem</th><th>Valor</th><th>Izq.</th><th>Der.</th><th>Comentario</th></tr>")
+
+                for r in responses:
+                    qid = (r or {}).get("questionId", "")
+                    val = (r or {}).get("selectedValue", "")
+                    la = (r or {}).get("leftAsymmetry", False)
+                    ra = (r or {}).get("rightAsymmetry", False)
+                    cmt = (r or {}).get("comment", "") or "—"
+                    html_parts.append(
+                        f"<tr>"
+                        f"<td>{esc(_label_question(qid))}</td>"
+                        f"<td>{esc(val)}</td>"
+                        f"<td>{'Sí' if la else 'No'}</td>"
+                        f"<td>{'Sí' if ra else 'No'}</td>"
+                        f"<td>{esc(cmt)}</td>"
+                        f"</tr>"
+                    )
+                html_parts.append("</table>")
+
+            # Hitos motores
+            html_parts.append("<h3>Hitos motores</h3><table><tr><th>Hito</th><th>Valor</th><th>Comentario</th></tr>")
+            for r in motor_resps:
+                qid = (r or {}).get("questionId", "")
+                val = (r or {}).get("selectedValue", "")
+                cmt = (r or {}).get("comment", "") or "—"
+                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
+            html_parts.append("</table>")
+
+            # Comportamiento
+            html_parts.append("<h3>Comportamiento</h3><table><tr><th>Dimensión</th><th>Valor</th><th>Comentario</th></tr>")
+            for r in behavior_resps:
+                qid = (r or {}).get("questionId", "")
+                val = (r or {}).get("selectedValue", "")
+                cmt = (r or {}).get("comment", "") or "—"
+                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
+            html_parts.append("</table>")
+
+        # Cierre HTML
+        html_parts.append("</body></html>")
+        html = "\n".join(html_parts)
+
+        # Generar PDF
+        pdf_io = BytesIO()
+        pisa.CreatePDF(html, dest=pdf_io)
+        return pdf_io.getvalue()
+
+    # ============================
+    # Actualización de datos niño
+    # ============================
     def _updateChildrenData(self, child_id: str, gestational_age: str, cronological_age: str, corrected_age: str, head_circumference: str):
         try:
             update_data = ChildUpdate(
@@ -272,7 +482,7 @@ class HineExamService:
                 corrected_age=corrected_age,
                 head_circumference=head_circumference
             )
-            childService.update_child(child_id, update_data)
+            self.child_service.update_child(child_id, update_data)
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

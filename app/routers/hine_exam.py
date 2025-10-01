@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from typing import List
+from io import BytesIO
+
 from app.schemas.exam import HineExam
 from app.schemas.section import CreateSection
 from app.schemas.item import CreateItem
@@ -31,6 +34,19 @@ async def get_hine_exams_by_children(children_id: str, current_user: dict = Depe
     except HTTPException as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
+@router.get("/children/{children_id}/history/pdf")
+async def get_hine_history_pdf(children_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Devuelve un PDF con TODOS los exámenes HINE del niño (historia clínica).
+    """
+    try:
+        pdf_bytes = service.get_child_history_pdf(children_id)
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
-
-
+    filename = f"HINE_Historia_{children_id}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
