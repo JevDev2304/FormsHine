@@ -4,8 +4,8 @@ from fastapi import HTTPException, status
 from io import BytesIO
 from datetime import datetime
 from html import escape as html_escape
-from xhtml2pdf import pisa
-
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from weasyprint import HTML
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
@@ -81,6 +81,13 @@ def _date_es(value: str | None) -> str:
             return value
     meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
     return f"{d.day:02d} {meses[d.month-1]} {d.year}"
+
+
+# Motor de plantillas (usa carpeta templates/)
+env = Environment(
+    loader=FileSystemLoader("templates"),
+    autoescape=select_autoescape()
+)
 
 
 class HineExamService:
@@ -182,7 +189,7 @@ class HineExamService:
                     ORDER BY section_id, item_id
                 """)
                 
-                result = session.exec(sql.bindparams(child_id=child_id))
+                result = session.exec(sql.bindparams(child_id==child_id))
                 rows = result.all()
                 
                 if not rows:
@@ -317,7 +324,7 @@ class HineExamService:
             )
 
     # ============================================================
-    # NUEVO MÉTODO: Historia clínica (TODOS los exámenes) en PDF
+    # Historia clínica (TODOS los exámenes) en PDF — usando Jinja2 + WeasyPrint
     # ============================================================
     def get_child_history_pdf(self, child_id: str) -> bytes:
         """
@@ -325,151 +332,28 @@ class HineExamService:
         - Minimalista, en español y legible para médicos.
         - Encabezado con 'El Comite'.
         - Salto de página entre exámenes.
-        Funciona tanto si los exámenes vienen como dicts (recomendado) como si vienen como modelos Pydantic.
+        Usa plantilla Jinja2 (templates/child_history.html) y WeasyPrint.
         """
         exams = self.get_exams_by_children(child_id)
         if not exams:
             raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
 
-        esc = lambda s: html_escape(str(s if s is not None else ""))
-        COMPANY_TITLE = "El Comite"
+        # Renderizar con Jinja2 (requiere templates/child_history.html)
+        template = env.get_template("child_history.html")
+        html_content = template.render(
+            company="El Comite",
+            child_id=child_id,
+            exams=exams,
+            esc=html_escape,
+            label_module=_label_module,
+            label_question=_label_question,
+            date_es=_date_es,
+            now=datetime.now().strftime("%d/%m/%Y %H:%M")
+        )
 
-        # Cabecera y estilos (compatibles con xhtml2pdf)
-        html_parts = [f"""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8"/>
-<title>{esc(COMPANY_TITLE)} - Historia clínica HINE - Paciente {esc(child_id)}</title>
-<style>
-  @page {{ size: A4; margin: 18mm; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; }}
-  h1 {{ font-size: 18px; margin: 0 0 6px 0; }}
-  h2 {{ font-size: 14px; margin: 12px 0 6px 0; }}
-  h3 {{ font-size: 12.5px; margin: 8px 0 4px 0; }}
-  table {{ width: 100%; border-collapse: collapse; margin: 6px 0 10px; }}
-  th, td {{ border: 1px solid #aaa; padding: 6px; text-align: left; vertical-align: top; }}
-  th {{ background: #f3f3f3; }}
-</style>
-</head>
-<body>
-  <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:6px;">{esc(COMPANY_TITLE)}</div>
-  <div style="text-align:center; font-size:11px; color:#555; margin-bottom:10px;">Historia clínica – Hammersmith Infant Neurological Examination</div>
-  <h1>Historia clínica HINE</h1>
-  <div>Paciente: {esc(child_id)} · Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
-"""]
-
-        for idx, exam in enumerate(exams):
-            # Asegurar dict
-            if isinstance(exam, dict):
-                data = exam
-            else:
-                # Intentar convertir si es un modelo
-                try:
-                    data = exam.dict()
-                except Exception:
-                    try:
-                        data = exam.model_dump()
-                    except Exception:
-                        raise HTTPException(status_code=500, detail="Formato de examen no soportado (se esperaba dict).")
-
-            if idx > 0:
-                html_parts.append('<p style="page-break-before: always;"></p>')
-
-            examId = data.get("examId", "")
-            patientId = data.get("patientId", "")
-            doctorName = data.get("doctorName", "")
-            examDate = _date_es(data.get("examDate"))
-
-            gestationalAge = data.get("gestationalAge", "")
-            cronologicalAge = data.get("cronologicalAge", "")
-            correctedAge = data.get("correctedAge", "")
-            headCircumference = data.get("headCircumference", "")
-
-            analysis = data.get("analysis", {}) or {}
-            modules = analysis.get("modules", []) or []
-            totalScore = analysis.get("totalScore", "")
-            maxPossibleScore = analysis.get("maxPossibleScore", "")
-            totalLeftAsymmetries = analysis.get("totalLeftAsymmetries", "")
-            totalRightAsymmetries = analysis.get("totalRightAsymmetries", "")
-
-            motor = data.get("motorMilestones", {}) or {}
-            motor_resps = motor.get("responses", []) or []
-
-            behavior = data.get("behavior", {}) or {}
-            behavior_resps = behavior.get("responses", []) or []
-
-            html_parts.append(f"""
-  <h2>Examen #{idx+1}</h2>
-  <p><strong>ID Examen:</strong> {esc(examId)} &nbsp;·&nbsp; <strong>Fecha:</strong> {esc(examDate)}</p>
-  <p><strong>Médico:</strong> {esc(doctorName)} &nbsp;·&nbsp; <strong>ID Paciente:</strong> {esc(patientId)}</p>
-  <p><strong>Edad gestacional (sem):</strong> {esc(gestationalAge)} &nbsp;·&nbsp; <strong>Edad cronológica (mes):</strong> {esc(cronologicalAge)} &nbsp;·&nbsp; <strong>Edad corregida (mes):</strong> {esc(correctedAge)} &nbsp;·&nbsp; <strong>PC (cm):</strong> {esc(headCircumference)}</p>
-
-  <h3>Puntaje global</h3>
-  <table>
-    <tr><th>Total</th><th>Máximo</th><th>Asim. izq.</th><th>Asim. der.</th></tr>
-    <tr>
-      <td>{esc(totalScore)}</td>
-      <td>{esc(maxPossibleScore)}</td>
-      <td>{esc(totalLeftAsymmetries)}</td>
-      <td>{esc(totalRightAsymmetries)}</td>
-    </tr>
-  </table>
-""")
-
-            # Módulos
-            html_parts.append("<h3>Módulos</h3>")
-            for m in modules:
-                moduleId = (m or {}).get("moduleId", "")
-                obtainedScore = (m or {}).get("obtainedScore", "")
-                responses = (m or {}).get("responses", []) or []
-
-                html_parts.append(f"<p><strong>{esc(_label_module(moduleId))}</strong> – Puntaje: {esc(obtainedScore)}</p>")
-                html_parts.append("<table><tr><th>Ítem</th><th>Valor</th><th>Izq.</th><th>Der.</th><th>Comentario</th></tr>")
-
-                for r in responses:
-                    qid = (r or {}).get("questionId", "")
-                    val = (r or {}).get("selectedValue", "")
-                    la = (r or {}).get("leftAsymmetry", False)
-                    ra = (r or {}).get("rightAsymmetry", False)
-                    cmt = (r or {}).get("comment", "") or "—"
-                    html_parts.append(
-                        f"<tr>"
-                        f"<td>{esc(_label_question(qid))}</td>"
-                        f"<td>{esc(val)}</td>"
-                        f"<td>{'Sí' if la else 'No'}</td>"
-                        f"<td>{'Sí' if ra else 'No'}</td>"
-                        f"<td>{esc(cmt)}</td>"
-                        f"</tr>"
-                    )
-                html_parts.append("</table>")
-
-            # Hitos motores
-            html_parts.append("<h3>Hitos motores</h3><table><tr><th>Hito</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in motor_resps:
-                qid = (r or {}).get("questionId", "")
-                val = (r or {}).get("selectedValue", "")
-                cmt = (r or {}).get("comment", "") or "—"
-                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
-            html_parts.append("</table>")
-
-            # Comportamiento
-            html_parts.append("<h3>Comportamiento</h3><table><tr><th>Dimensión</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in behavior_resps:
-                qid = (r or {}).get("questionId", "")
-                val = (r or {}).get("selectedValue", "")
-                cmt = (r or {}).get("comment", "") or "—"
-                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
-            html_parts.append("</table>")
-
-        # Cierre HTML
-        html_parts.append("</body></html>")
-        html = "\n".join(html_parts)
-
-        # Generar PDF
-        pdf_io = BytesIO()
-        pisa.CreatePDF(html, dest=pdf_io)
-        return pdf_io.getvalue()
+        # Generar PDF con WeasyPrint
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        return pdf_bytes
 
     # ============================
     # Actualización de datos niño
