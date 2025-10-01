@@ -1,6 +1,11 @@
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session, text
 from fastapi import HTTPException, status
+from io import BytesIO
+from datetime import datetime
+from html import escape as html_escape
+from xhtml2pdf import pisa
+
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
@@ -15,6 +20,64 @@ from app.schemas.item import CreateItem
 
 # Database
 from app.database.database import engine
+
+
+MODULE_LABELS_ES = {
+    "posture": "Postura",
+    "cranialNerves": "Nervios craneales",
+    "movements": "Movimientos",
+    "tone": "Tono",
+    "reflexesAndReaction": "Reflejos y reacciones",
+}
+
+QUESTION_LABELS_ES = {
+    # Postura
+    "head": "Cabeza", "arms": "Brazos", "feet": "Pies", "hands": "Manos",
+    "legs": "Piernas", "trunk": "Tronco",
+    # Nervios craneales
+    "eyeMovements": "Movimientos oculares", "suckingSwallowing": "Succión/deglución",
+    "visualResponse": "Respuesta visual", "facialAppearance": "Apariencia facial",
+    "auditoryResponse": "Respuesta auditiva",
+    # Movimientos
+    "amount": "Cantidad", "quality": "Calidad",
+    # Tono
+    "pronationPupination": "Pronación/supinación", "pullToSit": "Tracción a sedestación",
+    "passiveShoulderElevation": "Elevación pasiva del hombro", "ankleSorsiflexion": "Dorsiflexión del tobillo",
+    "poplitealAngle": "Ángulo poplíteo", "scarfSign": "Signo del pañuelo",
+    "hipAdductors": "Aductores de cadera", "ventralSuspension": "Suspensión ventral",
+    # Reflejos y reacciones
+    "armProtection": "Protección de brazos", "parachute": "Paracaídas",
+    "tendonReflexes": "Reflejos tendinosos", "lateralSuspension": "Suspensión lateral",
+    "verticalSuspension": "Suspensión vertical",
+    # Hitos motores
+    "LegKicking": "Pataleo", "CephalicControl": "Control cefálico", "Walking": "Marcha",
+    "Sitting": "Sedestación", "VoluntaryGrasp": "Prensión voluntaria", "Rolling": "Rodamiento",
+    "Crawling": "Gateo", "Standing": "Bipedestación",
+    # Comportamiento
+    "SocialInteraction": "Interacción social", "EmotionalState": "Estado emocional",
+    "StateOfConsciousness": "Estado de conciencia",
+}
+
+def _label_module(mid: str) -> str:
+    return MODULE_LABELS_ES.get(mid, mid)
+
+def _label_question(qid: str) -> str:
+    return QUESTION_LABELS_ES.get(qid, qid)
+
+def _date_es(value: str | None) -> str:
+    if not value:
+        return "—"
+    try:
+        d = datetime.fromisoformat(value)
+    except Exception:
+        try:
+            d = datetime.strptime(value, "%Y-%m-%d")
+        except Exception:
+            return value
+    meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
+    return f"{d.day:02d} {meses[d.month-1]} {d.year}"
+
+
 
 class HineExamService:
     SEPARATOR_SECTION_COMMENTS = "|||"
@@ -256,3 +319,109 @@ class HineExamService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Error creating section '{section_name}': {str(e)}"
             )
+
+    # ============================================================
+    # NUEVO MÉTODO: Historia clínica (TODOS los exámenes) en PDF
+    # ============================================================
+    def get_child_history_pdf(self, child_id: str) -> bytes:
+        """
+        Genera un PDF con la HISTORIA CLÍNICA HINE (TODOS los exámenes) del niño.
+        - Minimalista, en español y legible para médicos.
+        - Encabezado con 'El Comite'.
+        - Salto de página entre exámenes.
+        """
+        exams = self.get_exams_by_children(child_id)
+        if not exams:
+            raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
+
+        esc = lambda s: html_escape(str(s or ""))
+        COMPANY_TITLE = "El Comite"
+
+        # Cabecera y estilos (compatibles con xhtml2pdf)
+        html_parts = [f"""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<title>{esc(COMPANY_TITLE)} - Historia clínica HINE - Paciente {esc(child_id)}</title>
+<style>
+  @page {{ size: A4; margin: 18mm; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; }}
+  h1 {{ font-size: 18px; margin: 0 0 6px 0; }}
+  h2 {{ font-size: 14px; margin: 12px 0 6px 0; }}
+  h3 {{ font-size: 12.5px; margin: 8px 0 4px 0; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 6px 0 10px; }}
+  th, td {{ border: 1px solid #aaa; padding: 6px; text-align: left; vertical-align: top; }}
+  th {{ background: #f3f3f3; }}
+</style>
+</head>
+<body>
+  <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:6px;">{esc(COMPANY_TITLE)}</div>
+  <div style="text-align:center; font-size:11px; color:#555; margin-bottom:10px;">Historia clínica – Hammersmith Infant Neurological Examination</div>
+  <h1>Historia clínica HINE</h1>
+  <div>Paciente: {esc(child_id)} · Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
+"""]
+
+        # Un bloque por examen
+        for idx, exam in enumerate(exams):
+            if idx > 0:
+                # Salto de página entre exámenes
+                html_parts.append('<p style="page-break-before: always;"></p>')
+
+            html_parts.append(f"""
+  <h2>Examen #{idx+1}</h2>
+  <p><strong>ID Examen:</strong> {esc(getattr(exam, 'examId', ''))} &nbsp;·&nbsp; <strong>Fecha:</strong> {_date_es(getattr(exam, 'examDate', None))}</p>
+  <p><strong>Médico:</strong> {esc(getattr(exam, 'doctorName', ''))}</p>
+""")
+
+            anal = exam.analysis
+            html_parts.append(f"""
+  <h3>Puntaje global</h3>
+  <table>
+    <tr><th>Total</th><th>Máximo</th><th>Asim. izq.</th><th>Asim. der.</th></tr>
+    <tr>
+      <td>{anal.totalScore}</td>
+      <td>{anal.maxPossibleScore}</td>
+      <td>{anal.totalLeftAsymmetries}</td>
+      <td>{anal.totalRightAsymmetries}</td>
+    </tr>
+  </table>
+""")
+
+            # Módulos
+            html_parts.append("<h3>Módulos</h3>")
+            for m in anal.modules:
+                html_parts.append(f"<p><strong>{esc(_label_module(m.moduleId))}</strong> – Puntaje: {m.obtainedScore}</p>")
+                html_parts.append("<table><tr><th>Ítem</th><th>Valor</th><th>Izq.</th><th>Der.</th><th>Comentario</th></tr>")
+                for r in m.responses:
+                    html_parts.append(
+                        f"<tr><td>{esc(_label_question(r.questionId))}</td>"
+                        f"<td>{r.selectedValue}</td>"
+                        f"<td>{'Sí' if r.leftAsymmetry else 'No'}</td>"
+                        f"<td>{'Sí' if r.rightAsymmetry else 'No'}</td>"
+                        f"<td>{esc(r.comment or '—')}</td></tr>"
+                    )
+                html_parts.append("</table>")
+
+            # Hitos motores
+            mm = exam.motorMilestones
+            html_parts.append("<h3>Hitos motores</h3><table><tr><th>Hito</th><th>Valor</th><th>Comentario</th></tr>")
+            for r in mm.responses:
+                html_parts.append(f"<tr><td>{esc(_label_question(r.questionId))}</td><td>{r.selectedValue}</td><td>{esc(r.comment or '—')}</td></tr>")
+            html_parts.append("</table>")
+
+            # Comportamiento
+            beh = exam.behavior
+            html_parts.append("<h3>Comportamiento</h3><table><tr><th>Dimensión</th><th>Valor</th><th>Comentario</th></tr>")
+            for r in beh.responses:
+                html_parts.append(f"<tr><td>{esc(_label_question(r.questionId))}</td><td>{r.selectedValue}</td><td>{esc(r.comment or '—')}</td></tr>")
+            html_parts.append("</table>")
+
+        # Cierre HTML
+        html_parts.append("</body></html>")
+        html = "\n".join(html_parts)
+
+        # Generar PDF
+        pdf_io = BytesIO()
+        pisa.CreatePDF(html, dest=pdf_io)
+        return pdf_io.getvalue()
