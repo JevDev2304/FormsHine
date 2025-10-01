@@ -115,7 +115,6 @@ class HineExamService:
                     WHERE child_id = :child_id
                     ORDER BY section_id, item_id
                 """)
-                # ✅ OJO: child_id=child_id (keyword), no usar ==
                 result = session.exec(sql.bindparams(child_id=child_id))
                 rows = result.all()
                 
@@ -133,7 +132,7 @@ class HineExamService:
                     detail=f"Error al obtener detalles del examen: {str(e)}"
                 )
 
-        def get_child_history_pdf(self, child_id: str) -> bytes:
+    def get_child_history_pdf(self, child_id: str) -> bytes:
         exams = self.get_exams_by_children(child_id)
         if not exams:
             raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
