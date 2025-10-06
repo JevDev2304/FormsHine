@@ -1,15 +1,17 @@
+import os
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session, text
 from fastapi import HTTPException, status
 from html import escape as html_escape
 import pdfkit
-
+from datetime import datetime as _dt
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
 from app.schemas.child import ChildUpdate
 from app.services.child_service import ChildService
 from app.services.exam_service import ExamService
+from app.services.hine_pdf_renderer import HINEPdfRenderer
 from app.services.section_service import SectionService
 from app.services.item_service import ItemService
 
@@ -22,6 +24,8 @@ from app.schemas.item import CreateItem
 from app.database.database import engine
 
 childService = ChildService()
+
+
 
 class HineExamService:
     SEPARATOR_SECTION_COMMENTS = "|||"
@@ -38,6 +42,16 @@ class HineExamService:
         self.exam_service = exam_service or ExamService()
         self.section_service = section_service or SectionService()
         self.item_service = item_service or ItemService()
+        self.renderer = HINEPdfRenderer(
+        get_exam_by_id=self.get_exam,              # adapta al nombre real
+        get_exams_by_child=self.get_exams_by_children
+)
+
+    def get_exam_pdf(self, exam_id: str) -> bytes:
+        return self.renderer.render_exam_pdf(exam_id)
+
+    def get_child_history_pdf(self, child_id: str) -> bytes:
+        return self.renderer.render_child_history_pdf(child_id)
 
     def _create_item(
         self,
@@ -132,225 +146,6 @@ class HineExamService:
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Error al obtener detalles del examen: {str(e)}"
                 )
-
-    def get_child_history_pdf(self, child_id: str) -> bytes:
-        exams = self.get_exams_by_children(child_id)
-        if not exams:
-            raise HTTPException(status_code=404, detail="No se encontraron exámenes para este paciente.")
-
-        # ==== Helpers locales (no modifican el resto del archivo) ====
-        esc = lambda s: html_escape(str(s if s is not None else ""))
-
-        def _date_es(value: str | None) -> str:
-            if not value:
-                return "—"
-            from datetime import datetime as _dt
-            try:
-                d = _dt.fromisoformat(value)
-            except Exception:
-                try:
-                    d = _dt.strptime(value, "%Y-%m-%d")
-                except Exception:
-                    return value
-            meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
-            return f"{d.day:02d} {meses[d.month-1]} {d.year}"
-
-        MODULE_LABELS_ES = {
-            "posture": "Postura",
-            "cranialNerves": "Nervios craneales",
-            "movements": "Movimientos",
-            "tone": "Tono",
-            "reflexesAndReaction": "Reflejos y reacciones",
-        }
-        QUESTION_LABELS_ES = {
-            # Postura
-            "head": "Cabeza", "arms": "Brazos", "feet": "Pies", "hands": "Manos",
-            "legs": "Piernas", "trunk": "Tronco",
-            # Nervios craneales
-            "eyeMovements": "Movimientos oculares", "suckingSwallowing": "Succión/deglución",
-            "visualResponse": "Respuesta visual", "facialAppearance": "Apariencia facial",
-            "auditoryResponse": "Respuesta auditiva",
-            # Movimientos
-            "amount": "Cantidad", "quality": "Calidad",
-            # Tono
-            "pronationPupination": "Pronación/supinación", "pullToSit": "Tracción a sedestación",
-            "passiveShoulderElevation": "Elevación pasiva del hombro", "ankleSorsiflexion": "Dorsiflexión del tobillo",
-            "poplitealAngle": "Ángulo poplíteo", "scarfSign": "Signo del pañuelo",
-            "hipAdductors": "Aductores de cadera", "ventralSuspension": "Suspensión ventral",
-            # Reflejos y reacciones
-            "armProtection": "Protección de brazos", "parachute": "Paracaídas",
-            "tendonReflexes": "Reflejos tendinosos", "lateralSuspension": "Suspensión lateral",
-            "verticalSuspension": "Suspensión vertical",
-            # Hitos motores
-            "LegKicking": "Pataleo", "CephalicControl": "Control cefálico", "Walking": "Marcha",
-            "Sitting": "Sedestación", "VoluntaryGrasp": "Prensión voluntaria", "Rolling": "Rodamiento",
-            "Crawling": "Gateo", "Standing": "Bipedestación",
-            # Comportamiento
-            "SocialInteraction": "Interacción social", "EmotionalState": "Estado emocional",
-            "StateOfConsciousness": "Estado de conciencia",
-        }
-        def _label_module(mid: str) -> str:
-            return MODULE_LABELS_ES.get(mid, mid)
-        def _label_question(qid: str) -> str:
-            return QUESTION_LABELS_ES.get(qid, qid)
-
-        COMPANY_TITLE = "El Comité"
-        LOGO_PATH = "assets/logo.jpg"
-        COPYRIGHT_TEXT = "Todos los derechos reservados © HINE y sus creadores"
-
-        from datetime import datetime as _dt
-        import base64, os
-
-        # Convertimos la imagen a base64 para incrustarla directamente en el PDF
-        logo_data_uri = ""
-        if os.path.exists(LOGO_PATH):
-            with open(LOGO_PATH, "rb") as f:
-                encoded = base64.b64encode(f.read()).decode("utf-8")
-                logo_data_uri = f"data:image/jpeg;base64,{encoded}"
-
-        # ==== HTML inline (no requiere plantillas) ====
-        html_parts = [f"""
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8"/>
-<title>{esc(COMPANY_TITLE)} - Historia clínica HINE - Paciente {esc(child_id)}</title>
-<style>
-  @page {{ size: A4; margin: 18mm; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; }}
-  h1 {{ font-size: 18px; margin: 0 0 6px 0; }}
-  h2 {{ font-size: 14px; margin: 12px 0 6px 0; }}
-  h3 {{ font-size: 12.5px; margin: 8px 0 4px 0; }}
-  table {{ width: 100%; border-collapse: collapse; margin: 6px 0 10px; }}
-  th, td {{ border: 1px solid #aaa; padding: 6px; text-align: left; vertical-align: top; }}
-  th {{ background: #f3f3f3; }}
-</style>
-</head>
-<body>
-<div style="text-align:center">
-  <img src="https://elcomite.org.co/wp-content/uploads/2023/12/cropped-logo-02.jpg" alt="logo" style="height:200px;"/>
-</div>
-  <h1>Historia clínica HINE - Hammersmith Infant Neurological Examination</h1>
-  <div>Paciente: {esc(child_id)} · Generado: {_dt.now().strftime('%d/%m/%Y %H:%M')}</div>
-"""]
-
-        for idx, exam in enumerate(exams):
-            data = exam if isinstance(exam, dict) else getattr(exam, "dict", lambda: {})() or getattr(exam, "model_dump", lambda: {})()
-            if not isinstance(data, dict):
-                raise HTTPException(status_code=500, detail="Formato de examen no soportado (se esperaba dict).")
-
-            if idx > 0:
-                html_parts.append('<p style="page-break-before: always;"></p>')
-
-            examId = data.get("examId", "")
-            patientId = data.get("patientId", "")
-            doctorName = data.get("doctorName", "")
-            examDate = _date_es(data.get("examDate"))
-
-            gestationalAge = data.get("gestationalAge", "")
-            cronologicalAge = data.get("cronologicalAge", "")
-            correctedAge = data.get("correctedAge", "")
-            headCircumference = data.get("headCircumference", "")
-
-            analysis = data.get("analysis", {}) or {}
-            modules = analysis.get("modules", []) or []
-            totalScore = analysis.get("totalScore", "")
-            maxPossibleScore = analysis.get("maxPossibleScore", "")
-            totalLeftAsymmetries = analysis.get("totalLeftAsymmetries", "")
-            totalRightAsymmetries = analysis.get("totalRightAsymmetries", "")
-
-            motor = data.get("motorMilestones", {}) or {}
-            motor_resps = motor.get("responses", []) or []
-
-            behavior = data.get("behavior", {}) or {}
-            behavior_resps = behavior.get("responses", []) or []
-
-            html_parts.append(f"""
-  <h2>Examen #{idx+1}</h2>
-  <p><strong>ID Examen:</strong> {esc(examId)} &nbsp;·&nbsp; <strong>Fecha:</strong> {esc(examDate)}</p>
-  <p><strong>Médico:</strong> {esc(doctorName)} &nbsp;·&nbsp; <strong>ID Paciente:</strong> {esc(patientId)}</p>
-  <p><strong>Edad gestacional (sem):</strong> {esc(gestationalAge)} &nbsp;·&nbsp; <strong>Edad cronológica (mes):</strong> {esc(cronologicalAge)} &nbsp;·&nbsp; <strong>Edad corregida (mes):</strong> {esc(correctedAge)} &nbsp;·&nbsp; <strong>PC (cm):</strong> {esc(headCircumference)}</p>
-
-  <h3>Puntaje global</h3>
-  <table>
-    <tr><th>Total</th><th>Máximo</th><th>Asim. izq.</th><th>Asim. der.</th></tr>
-    <tr>
-      <td>{esc(totalScore)}</td>
-      <td>{esc(maxPossibleScore)}</td>
-      <td>{esc(totalLeftAsymmetries)}</td>
-      <td>{esc(totalRightAsymmetries)}</td>
-    </tr>
-  </table>
-""")
-
-            # Módulos
-            html_parts.append("<h3>Módulos</h3>")
-            for m in modules:
-                moduleId = (m or {}).get("moduleId", "")
-                obtainedScore = (m or {}).get("obtainedScore", "")
-                responses = (m or {}).get("responses", []) or []
-
-                html_parts.append(f"<p><strong>{esc(_label_module(moduleId))}</strong> – Puntaje: {esc(obtainedScore)}</p>")
-                html_parts.append("<table><tr><th>Ítem</th><th>Valor</th><th>Izq.</th><th>Der.</th><th>Comentario</th></tr>")
-
-                for r in responses:
-                    qid = (r or {}).get("questionId", "")
-                    val = (r or {}).get("selectedValue", "")
-                    la = (r or {}).get("leftAsymmetry", False)
-                    ra = (r or {}).get("rightAsymmetry", False)
-                    cmt = (r or {}).get("comment", "") or "—"
-                    html_parts.append(
-                        f"<tr>"
-                        f"<td>{esc(_label_question(qid))}</td>"
-                        f"<td>{esc(val)}</td>"
-                        f"<td>{'Sí' if la else 'No'}</td>"
-                        f"<td>{'Sí' if ra else 'No'}</td>"
-                        f"<td>{esc(cmt)}</td>"
-                        f"</tr>"
-                    )
-                html_parts.append("</table>")
-
-            # Hitos motores
-            html_parts.append("<h3>Hitos motores</h3><table><tr><th>Hito</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in motor_resps:
-                qid = (r or {}).get("questionId", "")
-                val = (r or {}).get("selectedValue", "")
-                cmt = (r or {}).get("comment", "") or "—"
-                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
-            html_parts.append("</table>")
-
-            # Comportamiento
-            html_parts.append("<h3>Comportamiento</h3><table><tr><th>Dimensión</th><th>Valor</th><th>Comentario</th></tr>")
-            for r in behavior_resps:
-                qid = (r or {}).get("questionId", "")
-                val = (r or {}).get("selectedValue", "")
-                cmt = (r or {}).get("comment", "") or "—"
-                html_parts.append(f"<tr><td>{esc(_label_question(qid))}</td><td>{esc(val)}</td><td>{esc(cmt)}</td></tr>")
-            html_parts.append("</table>")
-
-        # Cierre HTML
-        html_parts.append("</body></html>")
-        html = "\n".join(html_parts)
-
-        # Generar PDF con pdfkit (requiere wkhtmltopdf instalado)
-        config = None
-        try:
-            import os
-            # Ruta manual si no está en PATH:
-            wkhtml_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-            if os.path.exists(wkhtml_path):
-                config = pdfkit.configuration(wkhtmltopdf=wkhtml_path)
-        except Exception:
-            pass
-
-        pdf_bytes = pdfkit.from_string(html, False, configuration=config,    
-        options={
-        "footer-center": f"© HINE {_dt.now():%Y} · Todos los derechos pertenecen a sus creadores",
-        "footer-font-size": "9",
-        "footer-spacing": "3",
-    },)
-        return pdf_bytes
-
 
     def create_exam(self, hine_exam: HineExam) -> HineExam:
         self._validate_required_fields(hine_exam)
