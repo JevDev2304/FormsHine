@@ -2,7 +2,8 @@ from typing import Dict, Any, List, Optional
 from sqlmodel import Session, text
 from fastapi import HTTPException, status
 from html import escape as html_escape
-from weasyprint import HTML
+import pdfkit
+
 
 # Importaciones de servicios
 from app.mappers.exam_mapper import *
@@ -193,10 +194,21 @@ class HineExamService:
         def _label_question(qid: str) -> str:
             return QUESTION_LABELS_ES.get(qid, qid)
 
-        COMPANY_TITLE = "El Comite"
+        COMPANY_TITLE = "El Comité"
+        LOGO_PATH = "assets/logo.jpg"
+        COPYRIGHT_TEXT = "Todos los derechos reservados © HINE y sus creadores"
+
+        from datetime import datetime as _dt
+        import base64, os
+
+        # Convertimos la imagen a base64 para incrustarla directamente en el PDF
+        logo_data_uri = ""
+        if os.path.exists(LOGO_PATH):
+            with open(LOGO_PATH, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+                logo_data_uri = f"data:image/jpeg;base64,{encoded}"
 
         # ==== HTML inline (no requiere plantillas) ====
-        from datetime import datetime as _dt
         html_parts = [f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -215,9 +227,10 @@ class HineExamService:
 </style>
 </head>
 <body>
-  <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:6px;">{esc(COMPANY_TITLE)}</div>
-  <div style="text-align:center; font-size:11px; color:#555; margin-bottom:10px;">Historia clínica – Hammersmith Infant Neurological Examination</div>
-  <h1>Historia clínica HINE</h1>
+<div style="text-align:center">
+  <img src="https://elcomite.org.co/wp-content/uploads/2023/12/cropped-logo-02.jpg" alt="logo" style="height:200px;"/>
+</div>
+  <h1>Historia clínica HINE - Hammersmith Infant Neurological Examination</h1>
   <div>Paciente: {esc(child_id)} · Generado: {_dt.now().strftime('%d/%m/%Y %H:%M')}</div>
 """]
 
@@ -319,9 +332,25 @@ class HineExamService:
         html_parts.append("</body></html>")
         html = "\n".join(html_parts)
 
-        # Generar PDF con WeasyPrint (devuelve bytes)
-        pdf_bytes = HTML(string=html).write_pdf()
+        # Generar PDF con pdfkit (requiere wkhtmltopdf instalado)
+        config = None
+        try:
+            import os
+            # Ruta manual si no está en PATH:
+            wkhtml_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+            if os.path.exists(wkhtml_path):
+                config = pdfkit.configuration(wkhtmltopdf=wkhtml_path)
+        except Exception:
+            pass
+
+        pdf_bytes = pdfkit.from_string(html, False, configuration=config,    
+        options={
+        "footer-center": f"© HINE {_dt.now():%Y} · Todos los derechos pertenecen a sus creadores",
+        "footer-font-size": "9",
+        "footer-spacing": "3",
+    },)
         return pdf_bytes
+
 
     def create_exam(self, hine_exam: HineExam) -> HineExam:
         self._validate_required_fields(hine_exam)
